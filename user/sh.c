@@ -15,6 +15,7 @@
 
 struct cmd {
   int type;
+  int inp_is_sh;
 };
 
 struct execcmd {
@@ -76,6 +77,12 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(1);
+    if (cmd->inp_is_sh == 1) {
+      int i;
+      for (i = 0; ecmd->argv[i] != 0; ++i);
+      ecmd->argv[i] = "-sh";
+      ecmd->argv[i + 1] = 0;
+    }
     exec(ecmd->argv[0], ecmd->argv);
     fprintf(2, "exec %s failed\n", ecmd->argv[0]);
     break;
@@ -86,6 +93,12 @@ runcmd(struct cmd *cmd)
     if(open(rcmd->file, rcmd->mode) < 0){
       fprintf(2, "open %s failed\n", rcmd->file);
       exit(1);
+    }
+    /* printf("rcmd->file: %s\n", rcmd->file); */
+    int flen = strlen(rcmd->file);
+    if (flen > 3 && rcmd->file[flen - 3] == '.' && rcmd->file[flen - 2] == 's'
+          && rcmd->file[flen - 1] == 'h') {
+      rcmd->cmd->inp_is_sh = 1;
     }
     runcmd(rcmd->cmd);
     break;
@@ -132,9 +145,12 @@ runcmd(struct cmd *cmd)
 }
 
 int
-getcmd(char *buf, int nbuf)
+getcmd(char *buf, int nbuf, int inp_is_sh)
 {
-  write(2, "$ ", 2);
+  /* printf("sh: inp_is_sh: %d\n", inp_is_sh); */
+  if (inp_is_sh == 0) {
+    write(2, "$ ", 2);
+  }
   memset(buf, 0, nbuf);
   gets(buf, nbuf);
   if(buf[0] == 0) // EOF
@@ -143,8 +159,14 @@ getcmd(char *buf, int nbuf)
 }
 
 int
-main(void)
+main(int argc, char *argv[])
 {
+  int inp_is_sh = 0;
+  if (argc > 1 && strcmp(argv[1], "-sh") == 0) {
+    /* printf("sh: set inp_is_sh to 1"); */
+    inp_is_sh = 1;
+  }
+
   static char buf[100];
   int fd;
 
@@ -157,7 +179,7 @@ main(void)
   }
 
   // Read and run input commands.
-  while(getcmd(buf, sizeof(buf)) >= 0){
+  while(getcmd(buf, sizeof(buf), inp_is_sh) >= 0){
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
       // Chdir must be called by the parent, not the child.
       buf[strlen(buf)-1] = 0;  // chop \n
